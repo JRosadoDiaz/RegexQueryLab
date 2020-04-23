@@ -7,90 +7,104 @@ import java.util.List;
 import java.util.Scanner;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Stream;
 
 public class SelectCommand {
-    private static String selectRegex = "^SELECT (.*,?) FROM ([A-Za-z][A-Za-z0-9.]*) (WHERE (.*) (<=|>=|=|<|>) (.*))?";
 
-    public static void executeCommand(String command) {
-        String filePath = null;
-        File file;
+    /*
+    Regex Groups:
+    0: Full match
+    1: Column names
+    2: Table name (Refer to table object in list)
+    *** Optional ***
+    3: WHERE Clause
+    4: First operand
+    5: Operator
+    6: Second operand
 
+    Example Query:
+    SELECT <csv format column names> FROM <tableName> WHERE <criteria>
+
+    SELECT name, ssn FROM people
+     */
+
+    private static String selectRegex = "^SELECT (.*,?) FROM ([A-Za-z][A-Za-z0-9.]*)\\s?(WHERE (.*) (<=|>=|=|<|>) (.*))?";
+
+    public static void executeCommand(List<Table> tables,String command) {
+        Table tableObj = null;
         Pattern p = Pattern.compile(selectRegex);
         Matcher m = p.matcher(command);
         m.usePattern(p);
 
-        // Find file with table
+        String[] queryColumns = null;
         while(m.find()){
-            filePath = m.group(2);
-            file = new File(filePath);
-            if(file.exists()){
-                readFile(filePath);
+            for(Table t : tables) { // Find table from list
+                queryColumns = m.group(1).toLowerCase().split(",");
+                if(m.group(2).equals(t.getTableName())) {
+                    tableObj = t;
+                }
             }
+        }
+
+        if(tableObj == null) {
+            System.out.println("Could not find table name '" + m.group(2) + "'");
+        }
+        else {
+            // Gather content from file
+            List<String> content = readFile(tableObj.getFilePath());
+
+            // Print results
+            displayData(content, tableObj, queryColumns);
         }
     }
 
-    private static String tableName = "";
-    private static String columnNames = "";
-    private static String regexPatterns = "";
-
-    private static void readFile(String filePath) {
-        List<String> content = new ArrayList<>();
+    private static List<String> readFile(String filePath) {
+        List<String> list = new ArrayList<>();
         try{
             File file = new File(filePath);
             Scanner reader = new Scanner(file);
-
-            int count = 3; // count that helps collect first three lines
             while(reader.hasNextLine()){
                 String data = reader.nextLine();
 
-                switch (count){
-                    case 3:
-                        tableName = data;
-                        count--;
-                        break;
-                    case 2:
-                        columnNames = data;
-                        count--;
-                        break;
-                    case 1:
-                        regexPatterns = data;
-                        count--;
-                        break;
-                    case 0:
-                        content.add(data);
-                        break;
-                }
-                System.out.println(data);
+                list.add(data);
             }
             reader.close();
-
-            displayData(content);
         } catch (FileNotFoundException e) {
-            System.out.println("An error occurred");
+            System.out.println("An error occurred: the file was not found");
             e.printStackTrace();
         }
+
+        return list;
     }
 
-    private static void displayData(List<String> content) {
-        String[] header = columnNames.split(",");
+    private static void displayData(List<String> content, Table tableObj, String[] queryColumns) {
+        // for each line, use the table object's map to find the data needed for the columns requested
+
+        // Prepare headers for table view
         String headerString = "";
-        for (String h : header) {
+        for (String h : queryColumns) {
             headerString += String.format("%-25s", h);
         }
         System.out.println(headerString);
-        for (int i = 0; i < header.length * 25; i++) {
+
+        for (int i = 0; i < queryColumns.length * 25; i++) {
             System.out.print("-");
         }
         System.out.println();
 
-        for(String a : content) {
+        // Prepare data lines for table view
+        for(String line : content) {
             String formattedData = "";
-            String[] data = a.split(",");
-            for(String item : data){
-                formattedData += String.format("%-25s", item);
+            for (String column : queryColumns) { // for each column in query, use its assigned regex to add to the data string
+                String regex = tableObj.getColumnAndRegexPairList().get(column);
+                Pattern p = Pattern.compile(regex);
+                Matcher m = p.matcher(line);
+                m.usePattern(p);
+
+                while(m.find()) {
+                    formattedData += String.format("%-25s", m.group(1));
+                }
             }
-            System.out.println(formattedData);
+            System.out.println(formattedData); // print data
         }
     }
 }
